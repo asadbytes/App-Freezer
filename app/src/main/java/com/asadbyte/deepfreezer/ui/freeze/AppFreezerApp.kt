@@ -38,7 +38,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,26 +62,13 @@ fun AppFreezerApp(
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("All Apps", "Social Media", "Frozen Apps")
 
-    // Refresh UI state when device admin status might change
-    LaunchedEffect(Unit) {
-        viewModel.refreshAdminStatus()
-    }
-
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Top App Bar
         TopAppBar(
-            title = {
-                Text(
-                    text = "App Freezer",
-                    fontWeight = FontWeight.Bold
-                )
-            },
+            title = { Text("App Freezer", fontWeight = FontWeight.Bold) },
             actions = {
-                IconButton(
-                    onClick = { viewModel.refreshApps() }
-                ) {
+                IconButton(onClick = { viewModel.refreshApps() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                 }
             },
@@ -91,12 +77,12 @@ fun AppFreezerApp(
             )
         )
 
-        // Device Admin Status
-        if (!uiState.isDeviceAdminActive) {
+        // **THE FIX**: The banner will now only show if the app is NOT loading AND is not an admin.
+        // This prevents it from flashing on screen during a cold start.
+        if (!uiState.isDeviceAdminActive && !uiState.isLoading) {
             DeviceAdminBanner(onRequestDeviceAdmin = onRequestDeviceAdmin)
         }
 
-        // Error Message
         uiState.error?.let { error ->
             Card(
                 modifier = Modifier
@@ -124,7 +110,6 @@ fun AppFreezerApp(
             }
         }
 
-        // Tab Row
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surface
@@ -147,7 +132,6 @@ fun AppFreezerApp(
             }
         }
 
-        // Content
         when (selectedTab) {
             0 -> AppList(
                 apps = uiState.allApps,
@@ -161,7 +145,7 @@ fun AppFreezerApp(
             )
             2 -> FrozenAppsList(
                 apps = uiState.frozenApps,
-                onUnfreeze = viewModel::toggleAppFreeze,
+                onUnfreeze = { viewModel.toggleAppFreeze(it) }, // Can use the same toggle function
                 onUnfreezeAll = viewModel::unfreezeAllApps,
                 isLoading = uiState.isLoading
             )
@@ -180,12 +164,8 @@ fun DeviceAdminBanner(onRequestDeviceAdmin: () -> Unit) {
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.Warning,
                     contentDescription = null,
@@ -200,27 +180,20 @@ fun DeviceAdminBanner(onRequestDeviceAdmin: () -> Unit) {
                     color = MaterialTheme.colorScheme.error
                 )
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
-                text = "App Freezer needs Device Administrator permissions to effectively freeze apps. This prevents frozen apps from running, using battery, or accessing the internet.",
+                text = "App Freezer needs Device Administrator permissions to effectively freeze apps. This is a one-time setup.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-
             Spacer(modifier = Modifier.height(12.dp))
-
             Button(
-                onClick = {
-                    println("Device Admin button clicked") // Debug log
-                    onRequestDeviceAdmin()
-                },
+                onClick = onRequestDeviceAdmin,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Security, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Grant Device Admin Permission")
+                Text("Grant Permission")
             }
         }
     }
@@ -247,9 +220,7 @@ fun AppList(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     Icons.Default.Apps,
                     contentDescription = null,
@@ -272,7 +243,7 @@ fun AppList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(apps) { app ->
+        items(apps, key = { it.packageName }) { app ->
             AppItem(
                 app = app,
                 onToggleFreeze = { onToggleFreeze(app.packageName) }
@@ -288,11 +259,8 @@ fun FrozenAppsList(
     onUnfreezeAll: () -> Unit,
     isLoading: Boolean
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize()
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
         if (apps.isNotEmpty()) {
-            // Unfreeze All Button
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -314,6 +282,7 @@ fun FrozenAppsList(
             }
         }
 
+        // We can reuse the same AppList composable for the frozen apps.
         AppList(
             apps = apps,
             onToggleFreeze = onUnfreeze,
@@ -338,7 +307,6 @@ fun AppItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // App Icon
             app.icon?.let {
                 Icon(
                     painter = rememberDrawablePainter(it),
@@ -355,10 +323,7 @@ fun AppItem(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // App Info
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = app.appName,
                     style = MaterialTheme.typography.titleMedium,
@@ -371,13 +336,12 @@ fun AppItem(
                 )
             }
 
-            // Freeze Toggle
             Switch(
                 checked = app.isFrozen,
                 onCheckedChange = { onToggleFreeze() },
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.error,
-                    checkedTrackColor = MaterialTheme.colorScheme.errorContainer
+                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
                 )
             )
         }

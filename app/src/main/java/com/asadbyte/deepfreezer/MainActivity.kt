@@ -4,30 +4,31 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.asadbyte.deepfreezer.ui.freeze.AppFreezerApp
 import com.asadbyte.deepfreezer.ui.freeze.DeviceAdminReceiver
+import com.asadbyte.deepfreezer.ui.freeze.MainViewModel
 import com.asadbyte.deepfreezer.ui.theme.DeepFreezerTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val viewModel: MainViewModel by viewModels()
 
     private val deviceAdminLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         Log.d("MainActivity", "Device admin result: ${result.resultCode}")
-        // A short delay helps ensure the system has processed the admin change.
-        Handler(Looper.getMainLooper()).postDelayed({
-            recreate() // Restart the activity to refresh everything.
-        }, 500)
+        // This is more efficient than recreating the whole activity.
+        // It just tells the ViewModel to re-check the admin status.
+        viewModel.refreshAdminStatus()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,8 +40,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    // Pass the viewModel instance to the AppFreezerApp composable
                     AppFreezerApp(
-                        onRequestDeviceAdmin = { requestDeviceAdmin() }
+                        onRequestDeviceAdmin = { requestDeviceAdmin() },
+                        viewModel = viewModel
                     )
                 }
             }
@@ -55,7 +58,7 @@ class MainActivity : ComponentActivity() {
             )
             putExtra(
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "App Freezer needs device admin permission to freeze apps."
+                "App Freezer needs this permission to become a device owner and freeze apps."
             )
         }
 
