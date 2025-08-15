@@ -26,6 +26,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+    }
+
     init {
         loadApps()
     }
