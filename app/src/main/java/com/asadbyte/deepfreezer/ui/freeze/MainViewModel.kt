@@ -1,6 +1,7 @@
 package com.asadbyte.deepfreezer.ui.freeze
 
 import android.app.Application
+import android.content.pm.PackageManager
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,13 +28,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         loadApps()
-
-        // Listen to frozen apps changes
-        viewModelScope.launch {
-            freezeManager.frozenApps.collect {
-                updateFrozenState()
-            }
-        }
     }
 
     fun refreshApps() {
@@ -41,110 +35,127 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleAppFreeze(packageName: String) {
+        // 1. Perform an "optimistic" UI update for an instant response.
+        val currentState = _uiState.value
+
+        // Find the app in either the 'all' or 'frozen' list.
+        val appToToggle = currentState.allApps.find { it.packageName == packageName }
+            ?: currentState.frozenApps.find { it.packageName == packageName }
+
+        appToToggle?.let { app ->
+            val isNowFrozen = !app.isFrozen
+            val updatedApp = app.copy(isFrozen = isNowFrozen)
+
+            val newAllApps = currentState.allApps.toMutableList()
+            val newFrozenApps = currentState.frozenApps.toMutableList()
+
+            if (isNowFrozen) {
+                // Move app from 'all' lists to 'frozen' list
+                newAllApps.removeAll { it.packageName == packageName }
+                if (newFrozenApps.none { it.packageName == packageName }) {
+                    newFrozenApps.add(updatedApp)
+                }
+            } else {
+                // Move app from 'frozen' list to 'all' list
+                newFrozenApps.removeAll { it.packageName == packageName }
+                if (newAllApps.none { it.packageName == packageName }) {
+                    newAllApps.add(updatedApp)
+                }
+            }
+
+            val socialMediaPackages = getSocialMediaPackages()
+            val newSocialApps = newAllApps.filter { it.packageName in socialMediaPackages }.sortedBy { it.appName.lowercase() }
+
+            _uiState.value = currentState.copy(
+                allApps = newAllApps.sortedBy { it.appName.lowercase() },
+                socialMediaApps = newSocialApps,
+                frozenApps = newFrozenApps.sortedBy { it.appName.lowercase() }
+            )
+        }
+
+        // 2. Launch the actual freeze/unfreeze operation in the background.
         viewModelScope.launch {
             try {
-                val success = freezeManager.toggleAppFreeze(packageName)
-                // Always update the frozen state since we're tracking it locally
-                updateFrozenState()
-
-                // Don't show error message for normal operation
-                // Clear any existing error message
-                _uiState.value = _uiState.value.copy(error = null)
-
+                freezeManager.toggleAppFreeze(packageName)
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error toggling app freeze", e)
-                _uiState.value = _uiState.value.copy(
-                    error = "Error: ${e.message}"
-                )
+                _uiState.update { it.copy(error = "Error: ${e.message}") }
+                loadApps() // Revert UI on error
             }
-        }
-    }
-
-    fun unfreezeApp(packageName: String) {
-        viewModelScope.launch {
-            freezeManager.unfreezeApp(packageName)
-            updateFrozenState()
         }
     }
 
     fun unfreezeAllApps() {
         viewModelScope.launch {
             freezeManager.unfreezeAllApps()
-            updateFrozenState()
+            loadApps() // Reload after a bulk operation.
         }
+    }
+
+    private fun getSocialMediaPackages(): Set<String> {
+        return setOf(
+            "com.instagram.android", "com.facebook.katana", "com.twitter.android",
+            "com.snapchat.android", "com.whatsapp", "com.tiktok", "com.linkedin.android",
+            "com.reddit.frontpage", "com.pinterest", "com.tumblr", "com.discord",
+            "com.telegram.messenger", "com.viber.voip", "com.skype.raider",
+            "com.facebook.orca", "com.zhiliaoapp.musically"
+        )
     }
 
     private fun loadApps() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.update { it.copy(isLoading = true, error = null) }
 
             try {
-                val allApps = appScanner.getAllInstalledApps()
-                val socialMediaApps = appScanner.getSocialMediaApps()
+                val frozenPackages = freezeManager.getFrozenAppPackages()
+                val scannedApps = appScanner.getAllInstalledApps()
+                val scannedAppPackages = scannedApps.map { it.packageName }.toSet()
+                val allAppsMap = scannedApps.associateBy { it.packageName }.toMutableMap()
 
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    isDeviceAdminActive = freezeManager.isDeviceAdminActive(),
-                    allApps = allApps.map { app ->
-                        app.copy(isFrozen = freezeManager.isAppFrozen(app.packageName))
-                    },
-                    socialMediaApps = socialMediaApps.map { app ->
-                        app.copy(isFrozen = freezeManager.isAppFrozen(app.packageName))
+                frozenPackages.forEach { pkg ->
+                    if (!scannedAppPackages.contains(pkg)) {
+                        try {
+                            val flags = PackageManager.GET_META_DATA or PackageManager.MATCH_UNINSTALLED_PACKAGES
+                            val appInfo = appScanner.packageManager.getApplicationInfo(pkg, flags)
+                            allAppsMap[pkg] = appScanner.mapAppInfo(appInfo)
+                            Log.w("MainViewModel", "Recovered missing frozen app: $pkg")
+                        } catch (e: PackageManager.NameNotFoundException) {
+                            Log.e("MainViewModel", "App in prefs not found on device, removing: $pkg", e)
+                            freezeManager.unfreezeApp(pkg)
+                        }
                     }
-                )
+                }
 
-                updateFrozenState()
+                val fullAppList = allAppsMap.values.toList()
+                val completeAppListWithStatus = fullAppList.map { it.copy(isFrozen = it.packageName in frozenPackages) }
+
+                // **UI IMPROVEMENT LOGIC**
+                val frozenAppList = completeAppListWithStatus.filter { it.isFrozen }.sortedBy { it.appName.lowercase() }
+                val unfrozenAppList = completeAppListWithStatus.filter { !it.isFrozen }.sortedBy { it.appName.lowercase() }
+
+                val socialMediaPackages = getSocialMediaPackages()
+                val updatedSocialApps = unfrozenAppList.filter { it.packageName in socialMediaPackages }
+
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isDeviceAdminActive = freezeManager.isDeviceOwnerApp(),
+                        allApps = unfrozenAppList, // Only show unfrozen apps here
+                        socialMediaApps = updatedSocialApps, // Only show unfrozen social apps
+                        frozenApps = frozenAppList // Only show frozen apps here
+                    )
+                }
 
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Failed to load apps: ${e.message}"
-                )
+                Log.e("MainViewModel", "Failed to load apps", e)
+                _uiState.update {
+                    it.copy(isLoading = false, error = "Failed to load apps: ${e.message}")
+                }
             }
         }
     }
 
     fun refreshAdminStatus() {
-        val currentState = _uiState.value
-        _uiState.value = currentState.copy(
-            isDeviceAdminActive = freezeManager.isDeviceAdminActive()
-        )
-        val updatedAllApps = currentState.allApps.map { app ->
-            app.copy(isFrozen = freezeManager.isAppFrozen(app.packageName))
-        }
-
-        val updatedSocialMediaApps = currentState.socialMediaApps.map { app ->
-            app.copy(isFrozen = freezeManager.isAppFrozen(app.packageName))
-        }
-
-        val frozenApps = updatedAllApps.filter { it.isFrozen }
-
-        _uiState.value = currentState.copy(
-            isDeviceAdminActive = freezeManager.isDeviceAdminActive(),
-            allApps = updatedAllApps,
-            socialMediaApps = updatedSocialMediaApps,
-            frozenApps = frozenApps
-        )
-    }
-
-    private fun updateFrozenState() {
-        val currentState = _uiState.value
-
-        val updatedAllApps = currentState.allApps.map { app ->
-            app.copy(isFrozen = freezeManager.isAppFrozen(app.packageName))
-        }
-
-        val updatedSocialMediaApps = currentState.socialMediaApps.map { app ->
-            app.copy(isFrozen = freezeManager.isAppFrozen(app.packageName))
-        }
-
-        val frozenApps = updatedAllApps.filter { it.isFrozen }
-
-        _uiState.value = currentState.copy(
-            isDeviceAdminActive = freezeManager.isDeviceAdminActive(),
-            allApps = updatedAllApps,
-            socialMediaApps = updatedSocialMediaApps,
-            frozenApps = frozenApps
-        )
+        loadApps()
     }
 }

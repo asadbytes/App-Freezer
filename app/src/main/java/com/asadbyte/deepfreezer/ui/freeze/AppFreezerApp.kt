@@ -161,7 +161,7 @@ fun AppFreezerApp(
             )
             2 -> FrozenAppsList(
                 apps = uiState.frozenApps,
-                onUnfreeze = viewModel::unfreezeApp,
+                onUnfreeze = viewModel::toggleAppFreeze,
                 onUnfreezeAll = viewModel::unfreezeAllApps,
                 isLoading = uiState.isLoading
             )

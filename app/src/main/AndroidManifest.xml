@@ -2,13 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -29,44 +25,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Device Admin Receiver -->
+        <!-- Device Admin Receiver is still required for device owner functionality -->
         <receiver
             android:name=".ui.freeze.DeviceAdminReceiver"
-            android:permission="android.permission.BIND_DEVICE_ADMIN"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
             <meta-data
                 android:name="android.app.device_admin"
-                android:resource="@xml/device_admin"
-                android:exported="true"/>
+                android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
             </intent-filter>
         </receiver>
-
-        <!-- Freeze Monitor Service -->
-        <service
-            android:name=".ui.freeze.FreezeMonitorService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="App monitoring and management" />
-        </service>
-
-        <!-- Boot Receiver -->
-        <receiver
-            android:name=".ui.freeze.BootReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter android:priority="1000">
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.PACKAGE_REPLACED" />
-                <data android:scheme="package" />
-            </intent-filter>
-        </receiver>
+        <!-- The FreezeMonitorService and BootReceiver have been removed -->
     </application>
 
 </manifest>
