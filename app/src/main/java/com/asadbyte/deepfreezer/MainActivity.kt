@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.telecom.TelecomManager
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import com.asadbyte.deepfreezer.ui.freeze.AppFreezerApp
 import com.asadbyte.deepfreezer.ui.freeze.DeviceAdminReceiver
 import com.asadbyte.deepfreezer.ui.freeze.FreezeViewModel
@@ -34,6 +36,8 @@ import com.asadbyte.deepfreezer.ui.settings.SettingsViewModel
 import com.asadbyte.deepfreezer.ui.stealth.StealthModeScreen
 import com.asadbyte.deepfreezer.ui.stealth.stealthModeAllowedApps
 import com.asadbyte.deepfreezer.ui.theme.DeepFreezerTheme
+import com.asadbyte.deepfreezer.utils.AppLauncher
+import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
 
@@ -45,6 +49,7 @@ class MainActivity : FragmentActivity() {
 
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponentName: ComponentName
+    private lateinit var appLauncher: AppLauncher
 
     private val deviceAdminLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -52,9 +57,11 @@ class MainActivity : FragmentActivity() {
         freezeViewModel.refreshAdminStatus()
     }
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        appLauncher = AppLauncher(this)
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponentName = ComponentName(this, DeviceAdminReceiver::class.java)
 
@@ -103,15 +110,19 @@ class MainActivity : FragmentActivity() {
                                 authenticateToExitStealthMode()
                             },
                             onLaunchApp = { targetPackage ->
-                                try {
-                                    val intent = packageManager.getLaunchIntentForPackage(targetPackage)
-                                    if (intent != null) {
-                                        startActivity(intent)
-                                    } else {
-                                        Log.w("StealthMode", "Could not launch $targetPackage, app not found.")
+                                lifecycleScope.launch {
+                                    val success = appLauncher.launchApp(targetPackage)
+                                    if (!success) {
+                                        Log.w("StealthMode", "Failed to launch $targetPackage with all methods")
+                                        // Optionally show a toast to user
+                                        runOnUiThread {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Could not launch app: $targetPackage",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
-                                } catch (e: Exception) {
-                                    Log.e("StealthMode", "Error launching $targetPackage", e)
                                 }
                             },
                             isLoading = settingsState.isLoading,
