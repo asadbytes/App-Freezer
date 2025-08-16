@@ -61,7 +61,6 @@ fun StealthModeSettingsScreen(
     }
     // --- END OF FIX ---
 
-
     LaunchedEffect(Unit) {
         viewModel.loadAllAppsForSelection()
     }

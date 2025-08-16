@@ -71,8 +71,8 @@ private enum class CurrentScreen {
 @Composable
 fun AppFreezerApp(
     onRequestDeviceAdmin: () -> Unit,
-    freezeViewModel: FreezeViewModel = viewModel(), // Renamed for clarity
-    settingsViewModel: SettingsViewModel = viewModel() // New ViewModel for settings
+    freezeViewModel: FreezeViewModel,
+    settingsViewModel: SettingsViewModel
 ) {
     var currentScreen by remember { mutableStateOf(CurrentScreen.Main) }
     val localFocusManager = LocalFocusManager.current
