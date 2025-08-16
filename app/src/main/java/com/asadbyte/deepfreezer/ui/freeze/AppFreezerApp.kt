@@ -50,8 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,13 +57,15 @@ import com.asadbyte.deepfreezer.domain.AppInfo
 import com.asadbyte.deepfreezer.utils.rememberDrawablePainter
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalFocusManager
 import com.asadbyte.deepfreezer.ui.settings.SettingsScreen
 import com.asadbyte.deepfreezer.ui.settings.SettingsViewModel
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import com.asadbyte.deepfreezer.ui.stealth.StealthModeSettingsScreen
+
+private enum class CurrentScreen {
+    Main, Settings, StealthSettings
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,153 +74,167 @@ fun AppFreezerApp(
     freezeViewModel: FreezeViewModel = viewModel(), // Renamed for clarity
     settingsViewModel: SettingsViewModel = viewModel() // New ViewModel for settings
 ) {
-    var showSettings by remember { mutableStateOf(false) }
+    var currentScreen by remember { mutableStateOf(CurrentScreen.Main) }
+    val localFocusManager = LocalFocusManager.current
 
-    if (showSettings) {
-        // Pass the settings ViewModel to the SettingsScreen
-        SettingsScreen(
-            viewModel = settingsViewModel,
-            onNavigateBack = { showSettings = false }
-        )
-    } else {
-        val uiState by freezeViewModel.uiState.collectAsState()
-        var selectedTab by remember { mutableStateOf(0) }
-        val tabs = listOf("All Apps", "Social Media", "Frozen Apps")
-        val searchQuery by freezeViewModel.searchQuery.collectAsState()
+    when(currentScreen) {
+        CurrentScreen.Main -> {
+            val uiState by freezeViewModel.uiState.collectAsState()
+            var selectedTab by remember { mutableStateOf(0) }
+            val tabs = listOf("All Apps", "Social Media", "Frozen Apps")
+            val searchQuery by freezeViewModel.searchQuery.collectAsState()
 
-        val filteredAllApps = remember(uiState.allApps, searchQuery) {
-            uiState.allApps.filter {
-                it.appName.contains(searchQuery, ignoreCase = true) ||
-                        it.packageName.contains(searchQuery, ignoreCase = true)
-            }
-        }
-
-        val filteredSocialMediaApps = remember(uiState.socialMediaApps, searchQuery) {
-            uiState.socialMediaApps.filter {
-                it.appName.contains(searchQuery, ignoreCase = true) ||
-                        it.packageName.contains(searchQuery, ignoreCase = true)
-            }
-        }
-
-        // Simple pull-to-refresh using Material 3 built-in functionality
-        var isRefreshing by remember { mutableStateOf(false) }
-
-        // Sync with ViewModel state
-        LaunchedEffect(uiState.isRefreshing) {
-            isRefreshing = uiState.isRefreshing
-        }
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("App Freezer", fontWeight = FontWeight.Bold) },
-                    actions = {
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                )
-            }
-        ) { paddingValues ->
-            Column(modifier = Modifier.padding(paddingValues)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { freezeViewModel.onSearchQueryChanged(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    label = { Text("Search Apps") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { freezeViewModel.onSearchQueryChanged("") }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear Search")
-                            }
-                        }
-                    },
-                    singleLine = true
-                )
-
-                if (!uiState.isDeviceAdminActive && !uiState.isLoading) {
-                    DeviceAdminBanner(onRequestDeviceAdmin = onRequestDeviceAdmin)
+            val filteredAllApps = remember(uiState.allApps, searchQuery) {
+                uiState.allApps.filter {
+                    it.appName.contains(searchQuery, ignoreCase = true) ||
+                            it.packageName.contains(searchQuery, ignoreCase = true)
                 }
+            }
 
-                uiState.error?.let { error ->
-                    Card(
+            val filteredSocialMediaApps = remember(uiState.socialMediaApps, searchQuery) {
+                uiState.socialMediaApps.filter {
+                    it.appName.contains(searchQuery, ignoreCase = true) ||
+                            it.packageName.contains(searchQuery, ignoreCase = true)
+                }
+            }
+
+            // Simple pull-to-refresh using Material 3 built-in functionality
+            var isRefreshing by remember { mutableStateOf(false) }
+
+            // Sync with ViewModel state
+            LaunchedEffect(uiState.isRefreshing) {
+                isRefreshing = uiState.isRefreshing
+            }
+
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("App Freezer", fontWeight = FontWeight.Bold) },
+                        actions = {
+                            IconButton(onClick = { currentScreen = CurrentScreen.Settings }) {
+                                Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+            ) { paddingValues ->
+                Column(modifier = Modifier.padding(paddingValues)) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { freezeViewModel.onSearchQueryChanged(it) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = error, color = MaterialTheme.colorScheme.onErrorContainer)
+                        label = { Text("Search Apps") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { freezeViewModel.onSearchQueryChanged("") }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear Search")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        keyboardActions = KeyboardActions(
+                            onDone = { localFocusManager.clearFocus() }
+                        )
+                    )
+
+                    if (!uiState.isDeviceAdminActive && !uiState.isLoading) {
+                        DeviceAdminBanner(onRequestDeviceAdmin = onRequestDeviceAdmin)
+                    }
+
+                    uiState.error?.let { error ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = error, color = MaterialTheme.colorScheme.onErrorContainer)
+                            }
                         }
                     }
-                }
 
-                TabRow(selectedTabIndex = selectedTab) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            text = {
-                                Text(
-                                    text = when (index) {
-                                        0 -> "$title (${filteredAllApps.size})"
-                                        1 -> "$title (${filteredSocialMediaApps.size})"
-                                        2 -> "$title (${uiState.frozenApps.size})"
-                                        else -> title
-                                    }
+                    TabRow(selectedTabIndex = selectedTab) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = {
+                                    Text(
+                                        text = when (index) {
+                                            0 -> "$title (${filteredAllApps.size})"
+                                            1 -> "$title (${filteredSocialMediaApps.size})"
+                                            2 -> "$title (${uiState.frozenApps.size})"
+                                            else -> title
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    }
+
+                    // Use LazyColumn with pullRefresh modifier (if available in your Compose version)
+                    // Or add a simple refresh button as fallback
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when (selectedTab) {
+                            0 -> AppList(
+                                apps = filteredAllApps,
+                                onToggleFreeze = freezeViewModel::toggleAppFreeze,
+                                isLoading = uiState.isLoading
+                            )
+                            1 -> AppList(
+                                apps = filteredSocialMediaApps,
+                                onToggleFreeze = freezeViewModel::toggleAppFreeze,
+                                isLoading = uiState.isLoading
+                            )
+                            2 -> FrozenAppsList(
+                                apps = uiState.frozenApps,
+                                onUnfreeze = { freezeViewModel.toggleAppFreeze(it) },
+                                onUnfreezeAll = freezeViewModel::unfreezeAllApps,
+                                isLoading = uiState.isLoading
+                            )
+                        }
+
+                        // Refresh FAB as alternative to pull-to-refresh
+                        if (!uiState.isLoading) {
+                            FloatingActionButton(
+                                onClick = { freezeViewModel.refreshApps() },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp),
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Refresh Apps"
                                 )
                             }
-                        )
-                    }
-                }
-
-                // Use LazyColumn with pullRefresh modifier (if available in your Compose version)
-                // Or add a simple refresh button as fallback
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when (selectedTab) {
-                        0 -> AppList(
-                            apps = filteredAllApps,
-                            onToggleFreeze = freezeViewModel::toggleAppFreeze,
-                            isLoading = uiState.isLoading
-                        )
-                        1 -> AppList(
-                            apps = filteredSocialMediaApps,
-                            onToggleFreeze = freezeViewModel::toggleAppFreeze,
-                            isLoading = uiState.isLoading
-                        )
-                        2 -> FrozenAppsList(
-                            apps = uiState.frozenApps,
-                            onUnfreeze = { freezeViewModel.toggleAppFreeze(it) },
-                            onUnfreezeAll = freezeViewModel::unfreezeAllApps,
-                            isLoading = uiState.isLoading
-                        )
-                    }
-
-                    // Refresh FAB as alternative to pull-to-refresh
-                    if (!uiState.isLoading) {
-                        FloatingActionButton(
-                            onClick = { freezeViewModel.refreshApps() },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp),
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh Apps"
-                            )
                         }
                     }
                 }
             }
+        }
+
+        CurrentScreen.Settings -> {
+            SettingsScreen(
+                viewModel = settingsViewModel,
+                onNavigateBack = { currentScreen = CurrentScreen.Main },
+                onNavigateToStealthSettings = { currentScreen = CurrentScreen.StealthSettings }
+            )
+        }
+        CurrentScreen.StealthSettings -> {
+            StealthModeSettingsScreen(
+                viewModel = settingsViewModel,
+                onNavigateBack = { currentScreen = CurrentScreen.Settings }
+            )
         }
     }
 }

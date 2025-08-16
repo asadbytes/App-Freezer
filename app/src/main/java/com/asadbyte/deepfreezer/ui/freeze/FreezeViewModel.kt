@@ -123,7 +123,7 @@ class FreezeViewModel(application: Application) : AndroidViewModel(application) 
                             val appInfo = appScanner.packageManager.getApplicationInfo(pkg, flags)
                             allAppsMap[pkg] = appScanner.mapAppInfo(appInfo)
                         } catch (e: PackageManager.NameNotFoundException) {
-                            freezeManager.unfreezeApp(pkg)
+                            freezeManager.toggleAppFreeze(pkg)
                         }
                     }
                 }

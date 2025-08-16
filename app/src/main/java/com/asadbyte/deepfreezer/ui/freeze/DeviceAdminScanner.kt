@@ -23,7 +23,7 @@ class AppScanner(private val context: Context) {
                 .mapNotNull { appInfo ->
                     // Filter out system apps and our own app.
                     val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    if (!isSystem && appInfo.packageName != context.packageName) {
+                    if (appInfo.packageName != context.packageName) {
                         mapAppInfo(appInfo)
                     } else {
                         null

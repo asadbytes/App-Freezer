@@ -63,16 +63,17 @@ class MainActivity : FragmentActivity() {
             val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
             val defaultDialerPackage = telecomManager.defaultDialerPackage
 
-            // List of user-approved apps for kiosk mode
-            val userWhitelistedPackages = stealthModeAllowedApps.map {
-                it.packageName
-            }
+            // Load the custom list from SharedPreferences, with a fallback to the default list
+            val settingsPrefs = getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
+            val defaultPackages = stealthModeAllowedApps.map { it.packageName }.toSet()
+            val whitelistedPackagesFromPrefs = settingsPrefs.getStringSet("stealth_whitelisted_apps", defaultPackages) ?: defaultPackages
+
 
             val whitelistedPackages = mutableListOf(packageName)
             if (defaultDialerPackage != null) {
                 whitelistedPackages.add(defaultDialerPackage)
             }
-            whitelistedPackages.addAll(userWhitelistedPackages)
+            whitelistedPackages.addAll(whitelistedPackagesFromPrefs)
 
             // Use toSet() to remove any duplicates before setting the packages
             devicePolicyManager.setLockTaskPackages(
@@ -81,11 +82,11 @@ class MainActivity : FragmentActivity() {
             )
         }
 
-
         setContent {
             DeepFreezerTheme {
                 val settingsState by settingsViewModel.uiState.collectAsState()
                 isAuthRequired = settingsState.isAppLockEnabled
+
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -112,7 +113,10 @@ class MainActivity : FragmentActivity() {
                                 } catch (e: Exception) {
                                     Log.e("StealthMode", "Error launching $targetPackage", e)
                                 }
-                            }
+                            },
+                            isLoading = settingsState.isLoading,
+                            allApps = settingsState.allApps,
+                            whitelistedPackages = settingsState.whitelistedStealthApps
                         )
                     } else {
                         // Ensure we are not in lock task mode if stealth mode is off
@@ -137,6 +141,28 @@ class MainActivity : FragmentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun updateLockTaskPackages() {
+        if (devicePolicyManager.isDeviceOwnerApp(packageName)) {
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            val defaultDialerPackage = telecomManager.defaultDialerPackage
+
+            val settingsPrefs = getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
+            val defaultPackages = stealthModeAllowedApps.map { it.packageName }.toSet()
+            val whitelistedPackagesFromPrefs = settingsPrefs.getStringSet("stealth_whitelisted_apps", defaultPackages) ?: defaultPackages
+
+            val whitelistedPackages = mutableListOf(packageName)
+            if (defaultDialerPackage != null) {
+                whitelistedPackages.add(defaultDialerPackage)
+            }
+            whitelistedPackages.addAll(whitelistedPackagesFromPrefs)
+
+            devicePolicyManager.setLockTaskPackages(
+                adminComponentName,
+                whitelistedPackages.toSet().toTypedArray()
+            )
         }
     }
 
