@@ -5,30 +5,44 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
+import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.asadbyte.deepfreezer.ui.freeze.AppFreezerApp
 import com.asadbyte.deepfreezer.ui.freeze.DeviceAdminReceiver
-import com.asadbyte.deepfreezer.ui.freeze.MainViewModel
+import com.asadbyte.deepfreezer.ui.freeze.FreezeViewModel
+import com.asadbyte.deepfreezer.ui.settings.SettingsViewModel
 import com.asadbyte.deepfreezer.ui.theme.DeepFreezerTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
-    private val viewModel: MainViewModel by viewModels()
+    private val freezeViewModel: FreezeViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels() // New ViewModel
+
+    private var isAuthenticated by mutableStateOf(false)
+    private var isAuthRequired by mutableStateOf(false)
 
     private val deviceAdminLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        Log.d("MainActivity", "Device admin result: ${result.resultCode}")
-        // This is more efficient than recreating the whole activity.
-        // It just tells the ViewModel to re-check the admin status.
-        viewModel.refreshAdminStatus()
+    ) {
+        freezeViewModel.refreshAdminStatus()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,18 +50,64 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DeepFreezerTheme {
+                // Get the app lock state from the SettingsViewModel
+                val settingsState by settingsViewModel.uiState.collectAsState()
+                isAuthRequired = settingsState.isAppLockEnabled
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Pass the viewModel instance to the AppFreezerApp composable
-                    AppFreezerApp(
-                        onRequestDeviceAdmin = { requestDeviceAdmin() },
-                        viewModel = viewModel
-                    )
+                    if (isAuthenticated || !isAuthRequired) {
+                        // Pass both ViewModels to the main app composable
+                        AppFreezerApp(
+                            onRequestDeviceAdmin = { requestDeviceAdmin() },
+                            freezeViewModel = freezeViewModel,
+                            settingsViewModel = settingsViewModel
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("Authentication Required")
+                        }
+                        LaunchedEffect(Unit) {
+                            authenticate()
+                        }
+                    }
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (isAuthRequired && !isAuthenticated) {
+            authenticate()
+        }
+    }
+
+    private fun authenticate() {
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    isAuthenticated = true
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    Log.e("Auth", "Authentication error: $errString")
+                    finish()
+                }
+            })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("App Freezer Locked")
+            .setSubtitle("Authenticate to access the app")
+            .setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
+            .build()
+
+        biometricPrompt.authenticate(promptInfo)
     }
 
     private fun requestDeviceAdmin() {
@@ -58,14 +118,9 @@ class MainActivity : ComponentActivity() {
             )
             putExtra(
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "App Freezer needs this permission to become a device owner and freeze apps."
+                "Permission needed to become a device owner and freeze apps."
             )
         }
-
-        try {
-            deviceAdminLauncher.launch(intent)
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error launching device admin request", e)
-        }
+        deviceAdminLauncher.launch(intent)
     }
 }

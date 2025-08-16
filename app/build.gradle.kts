@@ -67,4 +67,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.6")
     // icons extended
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
+    // https://mvnrepository.com/artifact/androidx.biometric/biometric
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("com.google.accompanist:accompanist-swiperefresh:0.36.0")
 }
