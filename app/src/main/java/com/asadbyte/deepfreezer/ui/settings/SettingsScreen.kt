@@ -1,5 +1,6 @@
 package com.asadbyte.deepfreezer.ui.settings
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,9 +30,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material.icons.filled.Security
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,36 +73,68 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, contentDescription = "App Lock")
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text("App Lock", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                "Use biometrics or screen lock",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = uiState.isAppLockEnabled,
-                        onCheckedChange = { viewModel.setAppLock(it) } // Call the ViewModel's method
+            SettingsCard(
+                title = "App Lock",
+                description = "Use biometrics or screen lock",
+                icon = Icons.Default.Lock,
+                currentValue = uiState.isAppLockEnabled,
+                onValueChange = { viewModel.setAppLock(it) },
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Stealth Mode",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SettingsCard(
+                title = "Stealth Mode",
+                description = "Freeze all apps except the dialer",
+                icon = Icons.Default.Security,
+                currentValue = uiState.isStealthModeEnabled,
+                onValueChange = { viewModel.setStealthMode(it) },
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsCard(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    currentValue: Boolean,
+    onValueChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = "App Lock")
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(title, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
             }
+            Switch(
+                checked = currentValue,
+                onCheckedChange = { onValueChange(it) } // Call the ViewModel's method
+            )
         }
     }
 }
