@@ -1,9 +1,11 @@
 package com.asadbyte.deepfreezer
 
+import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
 import android.util.Log
@@ -11,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
@@ -37,7 +40,11 @@ import com.asadbyte.deepfreezer.ui.stealth.StealthModeScreen
 import com.asadbyte.deepfreezer.ui.stealth.stealthModeAllowedApps
 import com.asadbyte.deepfreezer.ui.theme.DeepFreezerTheme
 import com.asadbyte.deepfreezer.utils.AppLauncher
+import com.asadbyte.deepfreezer.utils.AppTroubleshooter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : FragmentActivity() {
 
@@ -50,6 +57,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponentName: ComponentName
     private lateinit var appLauncher: AppLauncher
+    private lateinit var appTroubleshooter: AppTroubleshooter
 
     private val deviceAdminLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -58,10 +66,12 @@ class MainActivity : FragmentActivity() {
     }
 
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         appLauncher = AppLauncher(this)
+        appTroubleshooter = AppTroubleshooter(this, appLauncher)
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponentName = ComponentName(this, DeviceAdminReceiver::class.java)
 
@@ -110,20 +120,7 @@ class MainActivity : FragmentActivity() {
                                 authenticateToExitStealthMode()
                             },
                             onLaunchApp = { targetPackage ->
-                                lifecycleScope.launch {
-                                    val success = appLauncher.launchApp(targetPackage)
-                                    if (!success) {
-                                        Log.w("StealthMode", "Failed to launch $targetPackage with all methods")
-                                        // Optionally show a toast to user
-                                        runOnUiThread {
-                                            Toast.makeText(
-                                                this@MainActivity,
-                                                "Could not launch app: $targetPackage",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                }
+                                handleAppLaunch(targetPackage)
                             },
                             isLoading = settingsState.isLoading,
                             allApps = settingsState.allApps,
@@ -155,25 +152,88 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    private fun updateLockTaskPackages() {
-        if (devicePolicyManager.isDeviceOwnerApp(packageName)) {
-            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-            val defaultDialerPackage = telecomManager.defaultDialerPackage
+    /**
+     * Secure app launch handler that maintains stealth mode security
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun handleAppLaunch(targetPackage: String) {
+        lifecycleScope.launch {
+            try {
+                Log.d("StealthMode", "Attempting secure launch for $targetPackage")
 
-            val settingsPrefs = getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
-            val defaultPackages = stealthModeAllowedApps.map { it.packageName }.toSet()
-            val whitelistedPackagesFromPrefs = settingsPrefs.getStringSet("stealth_whitelisted_apps", defaultPackages) ?: defaultPackages
+                // Use the secure lock task mode launcher
+                val success = appLauncher.launchAppInLockTaskMode(targetPackage)
 
-            val whitelistedPackages = mutableListOf(packageName)
-            if (defaultDialerPackage != null) {
-                whitelistedPackages.add(defaultDialerPackage)
+                if (success) {
+                    Log.d("StealthMode", "Successfully launched $targetPackage while maintaining security")
+                } else {
+                    Log.w("StealthMode", "Secure launch failed for $targetPackage")
+
+                    // Get app name for user-friendly message
+                    val appName = try {
+                        packageManager.getApplicationLabel(
+                            packageManager.getApplicationInfo(targetPackage, 0)
+                        ).toString()
+                    } catch (e: Exception) {
+                        targetPackage.substringAfterLast('.')
+                    }
+
+                    // Show a brief message - don't break stealth mode with dialogs
+                    showToast("Unable to launch $appName")
+                }
+
+            } catch (e: Exception) {
+                Log.e("StealthMode", "Error in secure launch for $targetPackage", e)
+                showToast("Launch error occurred")
             }
-            whitelistedPackages.addAll(whitelistedPackagesFromPrefs)
+        }
+    }
 
-            devicePolicyManager.setLockTaskPackages(
-                adminComponentName,
-                whitelistedPackages.toSet().toTypedArray()
-            )
+    /**
+     * Show toast message on main thread
+     */
+    private fun showToast(message: String) {
+        runOnUiThread {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Show troubleshoot dialog with solutions/alternatives
+     */
+    private fun showAppTroubleshootDialog(packageName: String, items: List<Any>) {
+        runOnUiThread {
+            val appName = try {
+                packageManager.getApplicationLabel(
+                    packageManager.getApplicationInfo(packageName, 0)
+                ).toString()
+            } catch (e: Exception) {
+                packageName
+            }
+
+            val message = when (items.firstOrNull()) {
+                is com.asadbyte.deepfreezer.utils.Alternative -> {
+                    "Cannot launch $appName. Try these alternatives:\n\n" +
+                            items.joinToString("\n") { "• ${(it as com.asadbyte.deepfreezer.utils.Alternative).title}" }
+                }
+                is com.asadbyte.deepfreezer.utils.Solution -> {
+                    "Failed to launch $appName. Try these solutions:\n\n" +
+                            items.joinToString("\n") { "• ${(it as com.asadbyte.deepfreezer.utils.Solution).title}" }
+                }
+                else -> "Could not launch $appName"
+            }
+
+            AlertDialog.Builder(this)
+                .setTitle("App Launch Issue")
+                .setMessage(message)
+                .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+                .setNeutralButton("App Settings") { _, _ ->
+                    // Open app settings
+                    lifecycleScope.launch {
+                        appTroubleshooter.attemptAlternativeLaunch(packageName)
+                    }
+                }
+                .show()
         }
     }
 
