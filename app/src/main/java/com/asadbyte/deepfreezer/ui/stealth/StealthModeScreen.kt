@@ -36,18 +36,21 @@ fun StealthModeScreen(
     val appsToShow = remember(allApps, whitelistedPackages) {
         allApps.filter { it.packageName in whitelistedPackages }
     }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.inverseSurface)
             .systemBarsPadding(), // Ensures content is not hidden behind system bars
-        contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxHeight()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 32.dp) // Add overall vertical padding
         ) {
-            Spacer(modifier = Modifier.height(64.dp))
+            // --- Header Section ---
+            Spacer(modifier = Modifier.height(32.dp))
             Icon(
                 imageVector = Icons.Default.Lock,
                 contentDescription = "Stealth Mode",
@@ -57,21 +60,31 @@ fun StealthModeScreen(
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "Stealth Mode Active",
-                fontSize = 28.sp,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.inverseOnSurface
             )
             Spacer(modifier = Modifier.height(48.dp))
 
+            // --- Content Section (Scrollable) ---
             if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(64.dp),
-                    color = MaterialTheme.colorScheme.inverseOnSurface
-                )
+                // The loader should also occupy the weighted space
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(64.dp),
+                        color = MaterialTheme.colorScheme.inverseOnSurface
+                    )
+                }
             } else {
+                // Apply weight directly to the grid, making it fill available space and scroll
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
-                    modifier = Modifier.padding(horizontal = 32.dp),
+                    modifier = Modifier
+                        .weight(1f) // KEY CHANGE: This makes the grid take up the remaining space
+                        .padding(horizontal = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -84,11 +97,10 @@ fun StealthModeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f)) // Pushes the button to the bottom
-
+            // --- Footer Section ---
+            Spacer(modifier = Modifier.height(24.dp)) // A fixed spacer provides breathing room
             Button(
                 onClick = onDisableStealthMode,
-                modifier = Modifier.padding(bottom = 32.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer
